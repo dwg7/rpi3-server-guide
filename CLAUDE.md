@@ -81,20 +81,24 @@ publicになった段階で、相互にリンクすればよい。
 ## 3. ガイドの構成(単一ページ、アンカーナビゲーション)
 
 1. **導入**: 一方的な指示書ではなく、一緒に探求しているという枠組みの提示
-2. **GeoServerセットアップ**: プロジェクトオーナーのPi 4B(Ubuntu
+2. **Piの準備(Ubuntu Server導入)**: OSイメージの選択・SDカード書き込み・
+   cloud-init/network-configによる初期設定・初回起動と確認。姉妹リポジトリで
+   実際に踏んだ落とし穴(有線とWi-Fiの併記、`dhcp4: true`、cloud-initは
+   初回のみ適用、等)を明記する。GeoServer/MapServer共通の前提
+3. **GeoServerセットアップ**: プロジェクトオーナーのPi 4B(Ubuntu
    Server 24.04、GeoServer 3.0.1、PostGIS backend、GeoJSON出力、
    WFS-Tテスト、30時間soak test)を土台に、Pi 3(1GB)向けの調整
    ポイントを明示
-3. **MapServerセットアップ**: 共同検証者によるDebian trixie-slim +
+4. **MapServerセットアップ**: 共同検証者によるDebian trixie-slim +
    apache2 + mod_fcgid構成。`MS_MAP_PATTERN`設定漏れの注意(非自明で
    誰もが躓きやすい点として、必ず目立たせる)。Tomcat 9(javax.servlet)
    と Tomcat 11(jakarta.servlet)の世代ミスマッチ注意
-4. **ベンチマーク手順**: 4並列ワーカー×20リクエスト(計80)の再現手順、
+5. **ベンチマーク手順**: 4並列ワーカー×20リクエスト(計80)の再現手順、
    壁時計時間ベースのスループット計算方法
-5. **既知の落とし穴まとめ**: CGI vs FastCGIでの性能逆転(MapServerの
+6. **既知の落とし穴まとめ**: CGI vs FastCGIでの性能逆転(MapServerの
    軽量さはFastCGI下でこそ活きる、という発見)、GeoPackageの並行書き込み
    での不安定さ vs PostGISの安定性
-6. **協力者へ:あなたの発見を書き込む欄**: co-creationの核となる
+7. **協力者へ:あなたの発見を書き込む欄**: co-creationの核となる
    セクション。最初は空欄・テンプレートの状態で公開し、メールで返って
    きた内容を、プロジェクトオーナー経由でこちらが反映していく
 
