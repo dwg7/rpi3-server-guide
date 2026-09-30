@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Web GIS on a Raspberry Pi 3: a hands-on guide</title>
 <meta name="description" content="Hands-on guide for running GeoServer and MapServer on a Raspberry Pi 3 (1 GB): setup, benchmarks, known pitfalls, and a space for collaborators' findings.">
 <style>
@@ -61,7 +62,10 @@
   }
   nav a { color: var(--accent); text-decoration: none; }
   nav a:hover { text-decoration: underline; }
-  section { padding-top: 1.2rem; }
+  @media (max-width: 40rem) {
+    nav { position: static; }
+  }
+  section { padding-top: 1.2rem; scroll-margin-top: 4.5rem; }
   h2 { font-size: 1.45rem; margin: 2rem 0 .6rem; padding-top: .6rem; border-top: 1px solid var(--rule); }
   h3 { font-size: 1.1rem; margin: 1.6rem 0 .4rem; }
   a { color: var(--accent); }
@@ -85,12 +89,11 @@
   .warn { background: var(--warn-bg); border-color: var(--warn-rule); color: var(--warn-fg); }
   .warn code { color: inherit; }
   .note { background: var(--note-bg); border-color: var(--note-rule); }
-  .untested::before {
-    content: "Not yet tested on a Pi 3";
+  .untested {
     display: inline-block;
     font-size: .75rem; font-weight: 600;
     background: var(--panel); border: 1px solid var(--rule);
-    border-radius: 3px; padding: 0 .4rem; margin-right: .5rem;
+    border-radius: 3px; padding: 0 .4rem;
     color: var(--muted);
   }
   .yours {
@@ -106,7 +109,8 @@
 
   @media print {
     :root { --bg: #fff; --fg: #000; --muted: #444; --panel: #eee; --rule: #bbb; --accent: #000;
-            --code-bg: #f2f2f2; --warn-bg: #fff; --warn-fg: #000; --note-bg: #fff; }
+            --code-bg: #f2f2f2; --warn-bg: #fff; --warn-fg: #000; --note-bg: #fff;
+            --warn-rule: #888; --note-rule: #888; }
     body { font-size: 11pt; }
     nav { display: none; }
     .wrap { max-width: none; padding: 0; }
@@ -114,6 +118,7 @@
     pre, table, .callout, .yours { break-inside: avoid; }
     pre { white-space: pre-wrap; }
     a { text-decoration: none; }
+    a[href^="http"]::after { content: " (" attr(href) ")"; font-size: .85em; word-break: break-all; }
   }
 </style>
 </head>
@@ -143,14 +148,14 @@
 <section id="intro">
   <h2>1. Introduction</h2>
 
-  <p>This is not a set of instructions to follow blindly. It is a notebook that we are filling in together.</p>
+  <p>This is less a manual than a shared notebook. We are filling it in together.</p>
 
-  <p>Two of us have already tried these tools on a <strong>Raspberry Pi 4B (4 GB)</strong>. That work went well, and it left one question open: <em>what happens on a Raspberry Pi 3 with 1 GB of RAM?</em> Nobody has measured that yet. You have that hardware, so you are in the best position to answer it.</p>
+  <p>Two of us have already tried these tools on a <strong>Raspberry Pi 4B (4 GB)</strong>. That work went well, and it left one question open: <em>what happens on a Raspberry Pi 3 with 1 GB of RAM?</em> Nobody has measured that yet. If you have that hardware, and the time and interest, you can answer it in a way we cannot.</p>
 
   <h3>How to read this guide</h3>
   <ul>
     <li>Everything below comes from real runs on a Pi 4B, unless a note says otherwise.</li>
-    <li>A tag reading <span class="untested"></span> marks advice that we have <strong>not</strong> verified on a Pi 3. Treat it as a starting point, and tell us where it is wrong.</li>
+    <li>A tag reading <span class="untested">Not yet tested on a Pi 3</span> marks advice that we have <strong>not</strong> verified on a Pi 3. Treat it as a starting point, and tell us where it is wrong.</li>
     <li>Each technical section ends with a dashed box for your observations. Anything you see that differs from this text is valuable, including "it did not work".</li>
   </ul>
 
@@ -166,20 +171,30 @@
       <tr><th>Written in</th><td>Java (needs a JVM)</td><td>C</td></tr>
       <tr><th>Memory appetite</th><td>Large: hundreds of MB even when idle</td><td>Small (reported to run in tens of MB; not measured by us)</td></tr>
       <tr><th>Strengths</th><td>WFS-T (editing over the web), WMTS, per-layer permissions (and GeoFence for finer rules), REST config API, web admin GUI</td><td>Fast, light WMS/WFS; configured through text files (mapfiles)</td></tr>
-      <tr><th>Question for a Pi 3</th><td>Does it fit in 1 GB at all?</td><td>Does its light footprint pay off?</td></tr>
+      <tr><th>Question for a Pi 3</th><td>Does it fit in 1 GB at all?</td><td>Does its light footprint help?</td></tr>
     </tbody>
   </table>
   </div>
 
   <p>Which one you need depends on what you want to do. If you only need to <em>serve</em> maps, MapServer is likely enough. If you need to <em>edit</em> features through the web (WFS-T), or manage permissions per layer, GeoServer offers those features and MapServer does not.</p>
 
-  <p>Before either, it is worth asking what you actually need. If the goal is only to publish maps, there are even lighter approaches (for example pre-built vector tiles served as static files, or small tile servers). GeoServer and MapServer earn their weight when you want standard OGC services such as WMS and WFS, and, with GeoServer, editing.</p>
+  <p>Before either, it is worth asking what you actually need. If the goal is only to publish maps, there are even lighter approaches (for example pre-built vector tiles served as static files, or small tile servers). GeoServer and MapServer are worth their cost when you want standard OGC services such as WMS and WFS, and, with GeoServer, editing.</p>
+
+  <h3>Terms used in this guide</h3>
+  <ul>
+    <li><strong>WMS</strong>: a standard way to request a map as an image. <strong>WFS</strong>: a standard way to request the features (points, lines, polygons and their attributes) themselves. <strong>WFS-T</strong>: WFS with editing.</li>
+    <li><strong>GML</strong>: the default XML format for WFS answers. <strong>GeoJSON</strong>: a lighter alternative.</li>
+    <li><strong>JVM</strong> and <strong>heap</strong>: the Java runtime, and the memory it may use for its objects.</li>
+    <li><strong>systemd</strong>: the part of Ubuntu that starts and supervises services. <strong>CPU governor</strong>: the setting that decides how the CPU changes its speed.</li>
+    <li><strong>CGI</strong> and <strong>FastCGI</strong>: two ways for a web server to run a program. Section 4.3 explains why the difference matters.</li>
+    <li><strong>mapfile</strong>: MapServer's text file that describes a map (its data and styling).</li>
+  </ul>
 
   <h3>What you need</h3>
   <ul>
     <li>A Raspberry Pi 3 (Model B or B+, 1 GB), a good SD card, and a power supply that keeps the board out of under-voltage.</li>
     <li>A second computer for SSH, and a network connection.</li>
-    <li>Ubuntu Server 64-bit (24.04 LTS). We used the same OS on both Pi models so that OS effects would not muddy the comparison. Desktop editions are not suitable for 1 GB. Section 2 walks through installing it.</li>
+    <li>Ubuntu Server 64-bit (24.04 LTS). We used the same OS on both Pi models so that OS differences would not confuse the comparison. Desktop editions are not suitable for 1 GB. Section 2 walks through installing it.</li>
   </ul>
 </section>
 
@@ -193,7 +208,7 @@
 
   <p>We used <strong>Ubuntu Server 24.04 LTS, 64-bit</strong> (the "preinstalled server arm64+raspi" image). Ubuntu officially supports the Pi 3 and the Pi 4, so both boards can run the same OS, which keeps OS differences out of the comparison. Do not use a desktop edition: it does not fit in 1 GB.</p>
 
-  <p>Images are published at <a href="https://cdimage.ubuntu.com/ubuntu/releases/noble/release/">cdimage.ubuntu.com</a>. The file we used on the Pi 4B was named <code>ubuntu-24.04.5-preinstalled-server-arm64+raspi.img.xz</code>. Pick the current 24.04 image with the same naming. Raspberry Pi Imager can also list it for you under <em>Other general-purpose OS &rarr; Ubuntu</em>.</p>
+  <p>Images are published at <a href="https://cdimage.ubuntu.com/ubuntu/releases/noble/release/">cdimage.ubuntu.com</a>. The file we used on the Pi 4B was named <code>ubuntu-24.04.5-preinstalled-server-arm64+raspi.img.xz</code>. Pick the current 24.04 image with the same naming. Raspberry Pi Imager can also list it for you under <em>Other general-purpose OS &rarr; Ubuntu</em>. Imager may list a newer Ubuntu release first; choose <strong>24.04 LTS</strong> explicitly, because all our measurements used it.</p>
 
   <h3>2.2 Write the SD card</h3>
 
@@ -210,8 +225,12 @@ cat ~/.ssh/id_ed25519.pub     # this is the public key to give the Pi</code></pr
 
   <p>There are two ways to give these settings to the Pi. Either is fine.</p>
 
-  <p class="untested"></p>
-  <p><strong>Route A: Imager's own settings dialog.</strong> When Raspberry Pi Imager offers "OS customisation" (the wording varies between versions), enter the hostname, user, SSH key, and Wi-Fi details there. This is the simplest route. We have not tested it on a Pi 3, so tell us how it goes.</p>
+  <p><span class="untested">Not yet tested on a Pi 3</span></p>
+  <p><strong>Route A: Imager's own settings dialog.</strong> When Raspberry Pi Imager offers "OS customisation" (the wording varies between versions), enter the hostname, user, SSH key, and Wi-Fi details there. This is the simplest route. We have not tested it on a Pi 3, so tell us how it goes. Two cautions:</p>
+  <ul>
+    <li>Use the user name <code>ubuntu</code>. The service file in section 3.2 says <code>User=ubuntu</code>; if you choose another name, change it there too.</li>
+    <li>If you set up Wi-Fi this way, check that the cable port still gets an IP address. Our own tests showed that a Wi-Fi-only network file can leave the cable port without one (see the traps below). If that happens to you, please tell us.</li>
+  </ul>
 
   <p><strong>Route B: a cloud-init file, which is what we used.</strong> Ubuntu reads two small text files from the SD card's boot partition (named <code>system-boot</code>) on its first start: <code>user-data</code> and <code>network-config</code>. Here is the <code>user-data</code> we used, with the values replaced by placeholders:</p>
 
@@ -254,6 +273,8 @@ packages:
         "YOUR-WIFI-NAME":
           password: "YOUR-WIFI-PASSWORD"</code></pre>
 
+  <p>The Wi-Fi password stays in this file, in plain text, on the SD card. Keep that in mind if you share the card or the file.</p>
+
   <div class="callout warn">
     <p><strong>Traps we fell into while doing this. Each one cost us a re-flash or an hour:</strong></p>
     <ul>
@@ -273,13 +294,16 @@ packages:
 
   <ol>
     <li>Put the card in the Pi, connect the cable (or have your Wi-Fi ready), and power on.</li>
-    <li><strong>Wait a few minutes.</strong> On the first boot, Ubuntu is expanding the file system and installing packages. A Pi 3 is slow at this.</li>
+    <li><strong>Be patient, and do not cut the power.</strong> On the first boot, Ubuntu expands the file system, installs the packages, and may run updates. A Pi 3 is slow at this. We have not timed it on a Pi 3, but expect it to take longer than on a Pi 4, possibly ten minutes or more.</li>
     <li>From your computer:
 <pre><code>ssh ubuntu@YOUR-HOSTNAME.local</code></pre>
       or use the IP address if the name does not resolve.</li>
     <li>Once in, make sure the first-boot set-up has finished:
-<pre><code>cloud-init status --wait</code></pre></li>
+<pre><code>cloud-init status --wait</code></pre>
+      If something looks wrong, <code>cloud-init status --long</code> and the file <code>/var/log/cloud-init-output.log</code> show what happened.</li>
   </ol>
+
+  <p>Right after the first boot, background updates may hold the package manager for a while. If <code>sudo apt install</code> fails with "Could not get lock", wait a few minutes and run it again.</p>
 
   <p>If you re-write the same board with a new card image, the Pi will have a new SSH identity, and your computer will refuse to connect with a loud "REMOTE HOST IDENTIFICATION HAS CHANGED" warning. That is expected. Run <code>ssh-keygen -R YOUR-HOSTNAME.local</code> and connect again.</p>
 
@@ -289,13 +313,15 @@ packages:
 
   <pre><code>uname -m                           # expect: aarch64
 grep Model /proc/cpuinfo           # expect: Raspberry Pi 3 Model B (or B+)
-free -h                            # note "used" and "available"
-java -version                      # expect: OpenJDK 17</code></pre>
+free -h                            # note "total", "used" and "available"
+java -version                      # expect: OpenJDK 17
+java -XX:+PrintCommandLineFlags -version   # shows which garbage collector Java chose
+journalctl -k | grep -i voltage    # no output is good; "Under-voltage detected" is not</code></pre>
 
-  <p>For reference, a freshly booted Ubuntu Server 24.04 on our Pi 4B used about 346 MiB with no swap. We do not yet know the figure for a Pi 3. On a 1 GB board it decides how much room is left for a server.</p>
+  <p>For reference, a freshly booted Ubuntu Server 24.04 on our Pi 4B used about 346 MiB with no swap. We do not yet know the figure for a Pi 3. On a 1 GB board it decides how much room is left for a server. The "total" shown by <code>free</code> may be somewhat below 1 GB, because part of the memory is reserved for the hardware.</p>
 
   <div class="callout note">
-    <p><strong>Remember to keep the board and the card healthy.</strong> A weak power supply causes strange, random failures on a Pi. If the system misbehaves, check power first. A good-quality SD card matters as much, especially for anything that writes a lot.</p>
+    <p><strong>Keep the board and the card healthy.</strong> A weak power supply causes strange, random failures on a Pi; if the system misbehaves, check power first (the command above shows under-voltage warnings). A good-quality SD card matters as much, especially for anything that writes a lot. A Pi 3 has no fan, and a small heatsink is a cheap precaution before you run long tests.</p>
   </div>
 
   <div class="yours" id="yours-prepare">
@@ -305,6 +331,7 @@ java -version                      # expect: OpenJDK 17</code></pre>
       <li>Did the Pi get an IP address on the first boot? On cable, Wi-Fi, or both?</li>
       <li>How long did the first boot take before you could log in?</li>
       <li>Your <code>free -h</code> output right after boot.</li>
+      <li>Which garbage collector Java chose (the output of <code>java -XX:+PrintCommandLineFlags -version</code>).</li>
       <li>Any step above that was unclear or did not match what you saw.</li>
     </ul>
     <p class="blank">(Empty for now. Waiting for your observations.)</p>
@@ -324,9 +351,10 @@ java -version                      # expect: OpenJDK 17</code></pre>
   <pre><code>sudo apt update
 sudo apt install -y openjdk-17-jre-headless unzip curl</code></pre>
 
-  <p>Check the current stable release at <a href="https://geoserver.org/release/stable/">geoserver.org/release/stable/</a> and download the <strong>Platform Independent Binary</strong> (the <code>-bin.zip</code>, which bundles Jetty). Then:</p>
+  <p>Check the current stable release at <a href="https://geoserver.org/release/stable/">geoserver.org/release/stable/</a> and find the <strong>Platform Independent Binary</strong> (the <code>-bin.zip</code>, which bundles Jetty). Copy the download link from that page and fetch it on the Pi (or download it on your computer and copy it over with <code>scp</code>). Then:</p>
 
   <pre><code>export GEOSERVER_VERSION=X.Y.Z        # the version you downloaded
+curl -fL -o geoserver-${GEOSERVER_VERSION}-bin.zip "PASTE-THE-DOWNLOAD-LINK-HERE"
 sudo mkdir -p /opt/geoserver
 sudo unzip -q geoserver-${GEOSERVER_VERSION}-bin.zip -d /opt/geoserver
 sudo mkdir -p /opt/geoserver/data_dir
@@ -341,7 +369,7 @@ sudo chown -R "$USER:$USER" /opt/geoserver/data_dir</code></pre>
 
   <h3>3.2 Run it as a service, with a memory limit</h3>
 
-  <p>This is the systemd unit we used on the Pi 4B. The heap sizes in <code>JAVA_OPTS</code> are the ones to change for the Pi 3.</p>
+  <p>This is the systemd unit we used on the Pi 4B. The heap sizes in <code>JAVA_OPTS</code> are the ones to change for the Pi 3. If your user name is not <code>ubuntu</code>, change <code>User=</code> as well.</p>
 
   <pre><code># /etc/systemd/system/geoserver.service
 [Unit]
@@ -366,6 +394,10 @@ WantedBy=multi-user.target</code></pre>
 sudo systemctl enable --now geoserver.service
 journalctl -u geoserver.service -f</code></pre>
 
+  <p>Starting takes a while on a small board. You will know it is up when this answers with an HTTP status line (200, or a redirect), rather than "connection refused":</p>
+
+  <pre><code>curl -I http://localhost:8080/geoserver/web/</code></pre>
+
   <div class="callout warn">
     <p><strong>Two details that cost us time:</strong></p>
     <ul>
@@ -387,21 +419,23 @@ journalctl -u geoserver.service -f</code></pre>
 
   <h3>3.4 Adjustments for 1 GB</h3>
 
-  <p class="untested"></p>
+  <p><span class="untested">Not yet tested on a Pi 3</span></p>
   <p>The reference setup used <code>-Xms512m -Xmx2048m</code> on the 4 GB board. We reduced the heap to <code>-Xms256m -Xmx512m</code> on that same board, as a rehearsal for the 1 GB board (the unit file above uses these smaller values). What we saw:</p>
 
   <ul>
     <li>With sustained load, the smaller heap was only about 10% slower for a heavy request.</li>
-    <li>On the <strong>first</strong> request after starting GeoServer, the small heap sometimes stalled for 12 to 30 seconds. It happened once per JVM start, for the first request that produced GML (WFS's default XML format), even a small one. GeoJSON output and WMS did not show it. It was <em>not</em> garbage collection. The cost appears to be first-time class loading and reflection set-up.</li>
+    <li>On the <strong>first</strong> request after starting GeoServer with the small heap, we saw stalls of 12 to 30 seconds or more. (30 seconds was our test client's time limit, so the real delay may have been longer.) In our tests this happened after every JVM start, for the first request that produced GML (WFS's default XML format), even a small one. GeoJSON output and WMS did not show it. It was <em>not</em> garbage collection. The cost appears to be first-time class loading and reflection set-up.</li>
     <li>Practical advice: after a restart, send one throwaway <code>GetFeature</code> request and wait for it, before you begin any timing.</li>
   </ul>
 
   <p>Things we have <strong>not</strong> measured, and that are worth your attention:</p>
   <ul>
-    <li><strong>Total memory.</strong> The JVM's real memory use is larger than <code>-Xmx</code>. On the 4 GB board with a 2 GB heap cap, the process sat near 1 GB. Whether a 512 MB heap plus the operating system fits comfortably in 1 GB is the central question. Watch <code>free -h</code> and <code>systemctl show geoserver.service -p MemoryCurrent</code>.</li>
+    <li><strong>Total memory.</strong> The JVM's real memory use is larger than <code>-Xmx</code>. On the 4 GB board with a 2 GB heap cap, the process sat near 1 GB. Whether a 512 MB heap plus the operating system fits comfortably in 1 GB is the central question. Watch <code>free -h</code> and <code>systemctl show geoserver.service -p MemoryCurrent</code>. If the process disappears, check whether the kernel stopped it for lack of memory: <code>journalctl -k | grep -i "out of memory"</code>.</li>
+    <li><strong>A different garbage collector.</strong> Java chooses its default collector by machine size. On a machine as small as a Pi 3 it may pick a simpler one than the one in our Pi 4B logs. That would change behaviour and timings. Record which one you got (see section 2.4).</li>
     <li><strong>A hint from a 1 GB limit on a bigger board.</strong> Our colleague ran GeoServer in a container capped at 1 GB on the Pi 4B. It used about 450 MB when idle and 450 to 570 MB under a four-worker load, and was never killed for running out of memory. The data was small (5,000 points), so this shows that GeoServer <em>can</em> start within 1 GB, not that it copes with heavy use.</li>
-    <li><strong>Swap.</strong> Our Pi 4B ran with no swap. On a 1 GB board you may want some, but swap on an SD card is slow and wears the card.</li>
+    <li><strong>Swap.</strong> Our Pi 4B ran with no swap. On a 1 GB board you may want some, but swap on an SD card is slow and wears the card. Compressed swap in memory (zram) avoids the wear, but we have not tried it.</li>
     <li><strong>PostGIS.</strong> It runs as a second service next to GeoServer and takes memory too. You may prefer to start with a read-only layer (see 3.5) before adding it.</li>
+    <li><strong>Run one server at a time</strong> while you measure. GeoServer and MapServer together would compete for the same 1 GB, and the numbers would mean little.</li>
   </ul>
 
   <h3>3.5 Data: choose the storage format on purpose</h3>
@@ -416,7 +450,7 @@ journalctl -u geoserver.service -f</code></pre>
   </table>
   </div>
 
-  <p>GeoPackage is a single SQLite file, and SQLite allows only one writer at a time, so this is a property of the format and not of the Pi. For a read-only service, GeoPackage is the simpler choice. For editing by several people at once, use PostGIS. If you must use GeoPackage, keep to one writer.</p>
+  <p>GeoPackage is a single SQLite file, and SQLite allows only one writer at a time, so this is a property of SQLite (as used by GeoServer for GeoPackage) and not of the Pi. For a read-only service, GeoPackage is the simpler choice. For editing by several people at once, use PostGIS. If you must use GeoPackage, keep to one writer.</p>
 
   <h3>3.6 Three cheap improvements</h3>
 
@@ -424,11 +458,11 @@ journalctl -u geoserver.service -f</code></pre>
 
   <ol>
     <li><strong>Ask for GeoJSON instead of GML</strong> when you request many features. Add <code>outputFormat=application/json</code> to a WFS <code>GetFeature</code> request. A full dump of 8,975 features was 2.3 to 2.5 times faster, with zero errors either way. The default GML output is the main cost.</li>
-    <li><strong>Set the CPU governor to <code>performance</code>.</strong> Ubuntu on the Pi defaults to <code>ondemand</code>. Switching raised WMS map-rendering throughput by 30 to 50%.
+    <li><strong>Set the CPU governor to <code>performance</code>.</strong> On our Pi 4B, the default was <code>ondemand</code>. Switching raised WMS map-rendering throughput by 30 to 50%.
 <pre><code>for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
   echo performance | sudo tee "$g"
 done</code></pre>
-      This resets on reboot. To make it permanent, put the same loop in a systemd <code>oneshot</code> unit that runs at boot (with <code>RemainAfterExit=yes</code>). Keep an eye on temperature (<code>/sys/class/thermal/thermal_zone0/temp</code>, in thousandths of a degree). Our Pi 4B stayed between 64 and 69 °C under light load.</li>
+      This resets on reboot. To make it permanent, put the same loop in a systemd <code>oneshot</code> unit that runs at boot (with <code>RemainAfterExit=yes</code>). Keep an eye on temperature (<code>/sys/class/thermal/thermal_zone0/temp</code>, in thousandths of a degree). Our Pi 4B stayed between 64 and 69 °C under light load. A Pi 3 without a heatsink may get hot sooner and slow itself down (throttling); we have not measured it.</li>
     <li><strong>Do not bother with paging.</strong> Splitting a big dump into <code>startIndex</code>/<code>count</code> pages made sequential fetching about 1.9 times <em>slower</em> and did not help when done in parallel.</li>
   </ol>
 
@@ -462,6 +496,10 @@ done</code></pre>
 <section id="mapserver">
   <h2>4. MapServer setup</h2>
 
+  <div class="callout note">
+    <p><strong>This section is not finished.</strong> It explains the two things that matter most (the <code>MS_MAP_PATTERN</code> permission and running under FastCGI), but it does not yet walk through a complete working setup: a first mapfile, the Apache wiring, and a test URL. We will add our colleague's working configuration once it has been reviewed.</p>
+  </div>
+
   <p>A colleague set up MapServer on a Pi 4B (4 GB) of the same kind, in a container based on Debian trixie-slim, with Apache 2, <code>mod_fcgid</code>, and the distribution's own MapServer packages (version 8.4.0). No source build was needed. On a Pi 3 you can try the same packages directly on Ubuntu Server. We expect the package names to be the same or very close, but the version will probably differ from 8.4.0, so check yours with <code>mapserv -v</code>.</p>
 
   <h3>4.1 Install</h3>
@@ -469,18 +507,19 @@ done</code></pre>
   <pre><code>sudo apt install -y apache2 libapache2-mod-fcgid cgi-mapserver mapserver-bin
 sudo a2enmod fcgid</code></pre>
 
-  <p class="untested"></p>
+  <p><span class="untested">Not yet tested on a Pi 3</span></p>
   <p>MapServer's small footprint is the reason to try it on a Pi 3. We expect it to fit comfortably. We have not measured that.</p>
 
   <h3>4.2 The step everyone misses: <code>MS_MAP_PATTERN</code></h3>
 
   <div class="callout warn">
-    <p><strong>Since MapServer 8, you must explicitly allow which mapfiles may be loaded through the <code>map=</code> URL parameter.</strong> Without that permission, every request fails with:</p>
+    <p><strong>Since MapServer 8, you must explicitly allow which mapfiles may be loaded through the <code>map=</code> URL parameter.</strong> You do this in a global MapServer configuration file, with a setting called <code>MS_MAP_PATTERN</code>. In our colleague's test, requests failed with this message until such a file was supplied and the web server passed it on:</p>
     <p><code>msLoadConfig(): Unable to access file.</code></p>
-    <p>The error message does not say what is missing. The fix has two parts, and forgetting the second is easy:</p>
+    <p>The message does not name the cause. If you see it, check these in order:</p>
     <ol>
-      <li>Create a global MapServer configuration file that contains an <code>MS_MAP_PATTERN</code> (a regular expression matching the paths of your mapfiles).</li>
-      <li>Make sure the <strong>web server passes the environment variable</strong> that points to that file (<code>MAPSERVER_CONFIG_FILE</code>) through to the CGI/FastCGI process. Apache does not do this by default.</li>
+      <li>The configuration file exists at the path you expect, and the web server's user can read it.</li>
+      <li>The <strong>web server passes the environment variable</strong> that points to that file (<code>MAPSERVER_CONFIG_FILE</code>) through to the MapServer process. Apache does not do this by default. This is the part that is easiest to forget.</li>
+      <li>Only then look at the pattern itself: it must match the path of your mapfile. (We would expect a mismatch to give a different message, but we did not hit that case ourselves.)</li>
     </ol>
   </div>
 
@@ -493,8 +532,10 @@ CONFIG
   END
 END</code></pre>
 
-  <pre><code># in your Apache site configuration (mod_fcgid)
+  <pre><code># in your Apache site configuration (mod_fcgid, i.e. FastCGI)
 FcgidInitialEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
+
+  <p><code>FcgidInitialEnv</code> applies to FastCGI only. If you also want to try plain CGI for comparison, Apache's <code>SetEnv</code> is the corresponding directive there.</p>
 
   <p>Then request a map with <code>map=/srv/mapfiles/yourfile.map</code> in the URL. If you still see the same error, first confirm that the environment variable really reaches the process.</p>
 
@@ -517,6 +558,10 @@ FcgidInitialEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
   <p>The lesson: MapServer's light weight is only visible when it is not being restarted for every request. Choosing how to deploy a server can matter as much as choosing which server to run.</p>
 
   <p>With Apache and <code>mod_fcgid</code>, this means the URL points at the FastCGI form of the program rather than the plain CGI one. The exact wiring depends on your Apache layout; we will add our working configuration here once it has been reviewed.</p>
+
+  <div class="callout warn">
+    <p><strong>Limit the number of FastCGI processes on a 1 GB board.</strong> By the <code>mod_fcgid</code> documentation, the defaults allow up to 100 processes per program and 1,000 in total. Under load, that many MapServer processes could use up all the memory. A low limit, for example <code>FcgidMaxProcessesPerClass 4</code> in the Apache configuration, is a safer starting point. We have not tested this on a Pi 3, so watch <code>free -h</code> while you try.</p>
+  </div>
 
   <h3>4.4 What is not yet answered</h3>
 
@@ -546,7 +591,7 @@ FcgidInitialEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
   <h3>5.1 The recipe</h3>
 
   <ol>
-    <li><strong>Same data on both servers.</strong> We generated 5,000 random points as a Shapefile and registered the identical dataset in GeoServer and in MapServer.</li>
+    <li><strong>Same data on both servers.</strong> We generated 5,000 random points as a Shapefile and registered the identical dataset in GeoServer and in MapServer. (A step-by-step walkthrough for creating the data and registering the layer is not written yet. Use any point layer you have, as long as both servers serve the same one.)</li>
     <li><strong>One request type.</strong> A WMS <code>GetMap</code> request, identical every time (same bounding box, size, and format).</li>
     <li><strong>Warm up first.</strong> Send one or two requests and wait for them. The first request after starting a server is not representative (see the cold-start stall in section 3.4).</li>
     <li><strong>Four parallel workers, 20 requests each</strong>, 80 in total.</li>
@@ -559,7 +604,7 @@ FcgidInitialEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
 
   <h3>5.2 A small script</h3>
 
-  <p>This needs only Python 3, which Ubuntu already includes. Save it as <code>bench.py</code>, and fill in your own URL.</p>
+  <p>This needs only Python 3, which Ubuntu already includes. Save it as <code>bench.py</code>, and fill in your own URL. It counts a request as an error unless a real image comes back. This matters, because a map server often reports a problem as a text message with an ordinary "200 OK" status, and that would otherwise look like a very fast success.</p>
 
   <pre><code>#!/usr/bin/env python3
 """4 workers x 20 requests; prints wall-clock throughput."""
@@ -569,17 +614,30 @@ from concurrent.futures import ThreadPoolExecutor
 URL = sys.argv[1]          # the full GetMap URL, in quotes
 WORKERS, PER_WORKER = 4, 20
 
+def fetch():
+    """One request. True only if an image came back."""
+    with urllib.request.urlopen(URL, timeout=60) as r:
+        body = r.read()
+        return r.headers.get_content_type().startswith("image/") and len(body) > 0
+
 def worker(_):
     errors = 0
     for _ in range(PER_WORKER):
         try:
-            with urllib.request.urlopen(URL, timeout=60) as r:
-                r.read()
+            ok = fetch()
         except Exception:
+            ok = False
+        if not ok:
             errors += 1
     return errors
 
-urllib.request.urlopen(URL, timeout=120).read()   # warm-up, not timed
+# Warm-up, not timed.
+try:
+    ok = fetch()
+except Exception as e:
+    sys.exit(f"warm-up request failed: {e}")
+if not ok:
+    sys.exit("warm-up did not return an image. Open the URL in a browser to read the message.")
 
 t0 = time.monotonic()
 with ThreadPoolExecutor(max_workers=WORKERS) as pool:
@@ -594,13 +652,13 @@ print(f"requests={total} errors={errors} wall_s={wall:.2f} "
 
   <pre><code>python3 bench.py "http://localhost:8080/geoserver/wms?service=WMS&amp;version=1.1.1&amp;request=GetMap&amp;layers=yourworkspace:yourlayer&amp;styles=&amp;bbox=-180,-90,180,90&amp;width=768&amp;height=768&amp;srs=EPSG:4326&amp;format=image/png"</code></pre>
 
-  <p>For MapServer, use its own URL with <code>map=...&amp;service=WMS&amp;request=GetMap...</code>.</p>
+  <p>For MapServer, use its own URL with <code>map=...&amp;service=WMS&amp;request=GetMap...</code>. If <code>errors</code> is not 0, do not trust the throughput figure until you know why.</p>
 
   <h3>5.3 Run it from the right place</h3>
 
   <ul>
     <li>Run the script <strong>on the Pi itself</strong> when you want the server's speed, without the network in the way. Note that the script then competes with the server for the same four cores.</li>
-    <li>Run it from <strong>another computer</strong> when you want to include the network. Say which one you did.</li>
+    <li>Run it from <strong>another computer</strong> when you want to include the network. Say which one you did. On a Pi 3 the wired network is limited (it runs over USB 2, and the Model B is 100 Mbit/s), so map images may be limited by the network rather than by the server. Wi-Fi is slower and less steady still.</li>
     <li>If you use an SSH tunnel for a long run, remember that a laptop that goes to sleep will kill the tunnel. In our 30-hour run, this was the only failure.</li>
   </ul>
 
@@ -609,9 +667,10 @@ print(f"requests={total} errors={errors} wall_s={wall:.2f} "
   <pre><code>free -h
 cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 awk '{ printf "%.1f C\n", $1/1000 }' /sys/class/thermal/thermal_zone0/temp
+journalctl -k | grep -i voltage
 uptime</code></pre>
 
-  <p>A hot board slows itself down (thermal throttling), and the governor changes results by tens of percent, so numbers without these are hard to interpret later.</p>
+  <p>A hot board slows itself down (thermal throttling), an under-voltage warning means the results are unreliable, and the governor changes results by tens of percent, so numbers without these are hard to interpret later.</p>
 
   <div class="yours" id="yours-benchmark">
     <h4>Your notes: benchmark</h4>
@@ -629,19 +688,19 @@ uptime</code></pre>
 <section id="pitfalls">
   <h2>6. Known pitfalls</h2>
 
-  <p>Every item here cost somebody real time. Skim the list before you start.</p>
+  <p>Every item here cost somebody real time. Look through the list before you start.</p>
 
   <h3>Choosing and deploying</h3>
   <ul>
     <li><strong>CGI versus FastCGI can reverse the result.</strong> MapServer under CGI lost to GeoServer; under FastCGI it won. Do not judge MapServer until it is running under FastCGI (see 4.3).</li>
-    <li><strong>Tomcat and GeoServer must be from the same servlet generation.</strong> If you deploy GeoServer as a <code>.war</code> in Tomcat, a GeoServer built for <code>javax.servlet</code> (Tomcat 9) will not start on Tomcat 11 (<code>jakarta.servlet</code>). The symptom is a <code>NoClassDefFoundError</code>. Check which servlet generation your GeoServer version needs before you pick a Tomcat image. The bundled-Jetty binary in section 3 avoids the question.</li>
+    <li><strong>Tomcat and GeoServer must be from the same servlet generation.</strong> If you deploy GeoServer as a <code>.war</code> in Tomcat, it has to match. The GeoServer 2.28.4 we tried is a <code>javax.servlet</code> build and needs Tomcat 9. It did not start on Tomcat 11, which is a <code>jakarta.servlet</code> release; the symptom was a <code>NoClassDefFoundError</code>. The reference setup our colleague began from was written for Tomcat 11, and newer GeoServer lines are expected to need the jakarta generation, so check the release notes of the version you download before you pick a Tomcat image. The bundled-Jetty binary in section 3 avoids the question.</li>
     <li><strong>Docker is not automatically the easy path on ARM.</strong> No official GeoServer arm64 image at the time of writing; the workable route is an official Tomcat image plus the <code>.war</code> (see 3.1).</li>
   </ul>
 
   <h3>Configuration traps</h3>
   <ul>
     <li><strong>Getting the Pi onto the network in the first place</strong> has its own traps: both cable and Wi-Fi in <code>network-config</code>, <code>dhcp4: true</code> on Wi-Fi, and cloud-init running only once per card (see 2.2).</li>
-    <li><strong>MapServer 8 needs <code>MS_MAP_PATTERN</code> and a web server that passes it on.</strong> The error message (<code>msLoadConfig(): Unable to access file.</code>) does not point at the cause (see 4.2).</li>
+    <li><strong>MapServer 8 needs <code>MS_MAP_PATTERN</code> and a web server that passes its configuration on.</strong> The error message (<code>msLoadConfig(): Unable to access file.</code>) does not name the cause; check that the file is readable and that <code>MAPSERVER_CONFIG_FILE</code> reaches the process (see 4.2).</li>
     <li><strong>systemd quoting:</strong> quote <code>Environment="JAVA_OPTS=..."</code> and use <code>${VAR}</code> with braces inside <code>ExecStart</code> (see 3.2).</li>
     <li><strong>GeoServer's REST shortcut for registering a Shapefile</strong> (the <code>external.shp</code> form) returned an unexplained error for us. The longer, standard XML-POST way to create a datastore worked.</li>
     <li><strong>Change the default GeoServer admin password</strong> before doing anything else, and keep the admin interface off the open network (see 3.3).</li>
@@ -649,21 +708,23 @@ uptime</code></pre>
 
   <h3>Performance surprises</h3>
   <ul>
-    <li><strong>The first GML request after a restart can stall for 12 to 30 seconds</strong> on a small heap. Warm up before you measure (see 3.4).</li>
+    <li><strong>The first GML request after a restart can stall for 12 to 30 seconds or more</strong> on a small heap. Warm up before you measure (see 3.4).</li>
     <li><strong>Asking for the whole dataset at once is the expensive operation.</strong> Filter, or request a small area (see 3.7).</li>
     <li><strong>GeoJSON is much cheaper than GML</strong> for large results (see 3.6).</li>
     <li><strong>The CPU governor matters</strong>, and it resets on reboot (see 3.6).</li>
+    <li><strong>Too many FastCGI processes can exhaust 1 GB.</strong> Set a low limit (see 4.3).</li>
   </ul>
 
   <h3>Data and concurrency</h3>
   <ul>
-    <li><strong>GeoPackage is unreliable under concurrent writes; PostGIS is not</strong> (see 3.5). This is the format, not the Pi.</li>
+    <li><strong>GeoPackage is unreliable under concurrent writes; PostGIS is not</strong> (see 3.5). This comes from SQLite, not from the Pi.</li>
     <li><strong>PostGIS accumulates dead rows between automatic cleanups</strong> when you edit and delete a lot. In our two-hour test it was about 14% of live rows, harmless on a small table. On a large table with heavy editing, watch disk space.</li>
   </ul>
 
   <h3>Measuring</h3>
   <ul>
     <li><strong>Do not compare numbers from different hardware or different data</strong> and call it a verdict. Our Pi 4B figures and our colleague's container figures used different data and different setups. Compare only what you ran under the same conditions.</li>
+    <li><strong>A benchmark can look fast because every request failed.</strong> Map servers often report errors as text with a "200 OK" status. The script in 5.2 counts only real images as successes.</li>
     <li><strong>Check a suspicious result in two ways before believing it.</strong> One of us briefly concluded that container memory limits were switched off, because we had looked in the wrong place for the setting (the older cgroup version instead of the current one). The limit was working all along.</li>
     <li><strong>The 1 GB experiment on a 4 GB board did not settle the question.</strong> Limiting a container to 1 GB on the Pi 4B did not squeeze GeoServer, because it never used more than about 600 MB with that small dataset. A real Pi 3, with larger data and more load, is the test that counts.</li>
     <li><strong>A long test from a sleeping laptop will be interrupted.</strong> Run long tests from a machine that stays awake.</li>
@@ -678,12 +739,14 @@ uptime</code></pre>
 
   <p>You do not have to fill in every field. Short, unpolished notes are perfectly fine, and so are "I could not get this to work" and "this step in the guide is wrong". Send them by email whenever it suits you. Please include the command you ran and what it printed, where you can, so that a number can be traced back to what happened.</p>
 
+  <p>Command output can contain things you may not want to share, such as the host name, an IP address, or the name of your Wi-Fi network. Send it as it is if you prefer; before anything goes on this public page, we will remove or replace such details.</p>
+
   <h3>Template</h3>
 
   <div class="yours">
     <h4>Setup</h4>
     <ul>
-      <li>Board: Raspberry Pi 3 Model B / B+ (circle one)</li>
+      <li>Board: Raspberry Pi 3 Model B, or Model B+</li>
       <li>OS and version:</li>
       <li>Power supply, SD card, cooling:</li>
       <li>GeoServer version and JVM heap settings:</li>
@@ -709,7 +772,7 @@ uptime</code></pre>
 
     <h4>How to credit you</h4>
     <ul>
-      <li>Full name and title</li>
+      <li>Full name (add your title or affiliation only if you wish)</li>
       <li>Handle only</li>
       <li>No mention</li>
     </ul>
@@ -722,7 +785,8 @@ uptime</code></pre>
 </main>
 
 <footer>
-  <p>Public-domain dedication: see the repository's <code>LICENSE</code> (CC0 1.0). Last updated: 2026-09-30. Status: draft, awaiting review.</p>
+  <p>Sources: the public discussion in <a href="https://github.com/UNopenGIS/7/issues/1003">UNopenGIS/7 issue 1003</a>, and our own measurements on a Raspberry Pi 4B. Repository: <a href="https://github.com/dwg7/rpi3-server-guide">dwg7/rpi3-server-guide</a>. Public-domain dedication: CC0 1.0 (see the <code>LICENSE</code> file in the repository).</p>
+  <p>Last updated: 2026-09-30. Status: first published version. Corrections and additions are welcome.</p>
 </footer>
 
 </div>
