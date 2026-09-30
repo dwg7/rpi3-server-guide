@@ -16,7 +16,7 @@
 
 ## 1. プロジェクト概要・背景
 
-`dwg7/rpi-geoserver0`で進めている、UNMISS所属の協力者(南スーダン)との
+`dwg7/rpi-geoserver0`で進めている、海外の協力者との
 協働——Raspberry Pi上でのGeoServer/MapServer検証——の一環。Pi 4B(4GB)
 での検証は完了し、次はPi 3(1GB)というより制約の厳しいハードウェアでの
 検証に進む段階。
