@@ -497,7 +497,7 @@ done</code></pre>
   <h2>4. MapServer setup</h2>
 
   <div class="callout note">
-    <p><strong>This section is not finished.</strong> It explains the two things that matter most (the <code>MS_MAP_PATTERN</code> permission and running under FastCGI), but it does not yet walk through a complete working setup: a first mapfile, the Apache wiring, and a test URL. We will add our colleague's working configuration once it has been reviewed.</p>
+    <p><strong>How much of this section has been run.</strong> The two things that matter most (the <code>MS_MAP_PATTERN</code> permission, and FastCGI versus CGI) come from our colleague's real experience. The <strong>mapfile and the Apache settings in 4.3 and 4.4 are a sketch</strong> that we wrote from the MapServer and Apache documentation. We have not run them on a Pi, and they are not our colleague's working files. Expect to adjust them, and please tell us what you had to change. We will replace the sketch with a reviewed, working configuration.</p>
   </div>
 
   <p>A colleague set up MapServer on a Pi 4B (4 GB) of the same kind, in a container based on Debian trixie-slim, with Apache 2, <code>mod_fcgid</code>, and the distribution's own MapServer packages (version 8.4.0). No source build was needed. On a Pi 3 you can try the same packages directly on Ubuntu Server. We expect the package names to be the same or very close, but the version will probably differ from 8.4.0, so check yours with <code>mapserv -v</code>.</p>
@@ -539,7 +539,82 @@ FcgidInitialEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
 
   <p>Then request a map with <code>map=/srv/mapfiles/yourfile.map</code> in the URL. If you still see the same error, first confirm that the environment variable really reaches the process.</p>
 
-  <h3>4.3 Run it under FastCGI, not plain CGI</h3>
+  <h3>4.3 A first map, with plain CGI (a sketch)</h3>
+
+  <p><span class="untested">Not yet tested on a Pi 3</span></p>
+  <p>Get one map to appear with plain CGI first, because it is the easiest to diagnose. Then move to FastCGI in 4.4. Use the same points as GeoServer (section 5.1, which put a copy in <code>/srv/data</code>).</p>
+
+  <p>A minimal mapfile, saved as <code>/srv/mapfiles/demo.map</code> (create the folder with <code>sudo mkdir -p /srv/mapfiles</code>). Its name must match the pattern from 4.2. Replace <code>localhost</code> if you will use the map from another computer:</p>
+
+  <pre><code>MAP
+  NAME "demo"
+  STATUS ON
+  SIZE 768 768
+  EXTENT -10 -10 10 10
+  UNITS DD
+  IMAGETYPE PNG
+  PROJECTION
+    "init=epsg:4326"
+  END
+  SYMBOL
+    NAME "circle"
+    TYPE ELLIPSE
+    POINTS 1 1 END
+    FILLED TRUE
+  END
+  WEB
+    METADATA
+      "wms_title"          "demo"
+      "wms_onlineresource" "http://localhost/cgi-bin/mapserv?map=/srv/mapfiles/demo.map&amp;"
+      "wms_srs"            "EPSG:4326"
+      "wms_enable_request" "*"
+    END
+  END
+  LAYER
+    NAME "points"
+    TYPE POINT
+    STATUS ON
+    DATA "/srv/data/points.shp"
+    PROJECTION
+      "init=epsg:4326"
+    END
+    METADATA
+      "wms_title" "points"
+    END
+    CLASS
+      STYLE
+        SYMBOL "circle"
+        SIZE 6
+        COLOR 200 40 40
+      END
+    END
+  END
+END</code></pre>
+
+  <p><strong>Step 1: test MapServer on its own, without Apache.</strong> This separates a configuration problem from a web-server problem. The path to the program may differ on your system (find it with <code>dpkg -L cgi-mapserver</code>):</p>
+
+  <pre><code>MAPSERVER_CONFIG_FILE=/etc/mapserver.conf /usr/lib/cgi-bin/mapserv -nh \
+  "QUERY_STRING=map=/srv/mapfiles/demo.map&amp;SERVICE=WMS&amp;REQUEST=GetCapabilities" | head -20</code></pre>
+
+  <p>You should see the start of an XML document that mentions your layer, not an error message. If you see <code>msLoadConfig()</code> here, the problem is the configuration file (4.2), and Apache is not involved yet.</p>
+
+  <p><strong>Step 2: let Apache run it as plain CGI.</strong> Create <code>/etc/apache2/conf-available/mapserver.conf</code> containing one line, then switch it on:</p>
+
+  <pre><code>SetEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
+
+  <pre><code>sudo a2enmod cgid
+sudo a2enconf mapserver
+sudo systemctl reload apache2</code></pre>
+
+  <p>(On Ubuntu the folder <code>/usr/lib/cgi-bin</code> is normally already served at <code>/cgi-bin/</code>. If it is not, <code>sudo a2enconf serve-cgi-bin</code> switches that on.)</p>
+
+  <p><strong>Step 3: request a real map.</strong> This is the URL to give to the benchmark script in 5.3:</p>
+
+  <pre><code>http://localhost/cgi-bin/mapserv?map=/srv/mapfiles/demo.map&amp;SERVICE=WMS&amp;VERSION=1.1.1&amp;REQUEST=GetMap&amp;LAYERS=points&amp;STYLES=&amp;SRS=EPSG:4326&amp;BBOX=-10,-10,10,10&amp;WIDTH=768&amp;HEIGHT=768&amp;FORMAT=image/png</code></pre>
+
+  <p>Open it in a browser (or with <code>curl -o test.png</code>). A PNG with red dots means it works. If you get text instead of an image, read it: MapServer explains most mapfile mistakes in plain words.</p>
+
+  <h3>4.4 Run it under FastCGI, not plain CGI</h3>
 
   <div class="callout warn">
     <p><strong>This is the single most important performance decision.</strong> Under plain CGI, the web server starts a new MapServer process for every request. Under FastCGI, a pool of MapServer processes stays alive and is reused. In our test the same MapServer was slower than GeoServer under CGI, then clearly faster once switched to FastCGI:</p>
@@ -557,13 +632,27 @@ FcgidInitialEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
 
   <p>The lesson: MapServer's light weight is only visible when it is not being restarted for every request. Choosing how to deploy a server can matter as much as choosing which server to run.</p>
 
-  <p>With Apache and <code>mod_fcgid</code>, this means the URL points at the FastCGI form of the program rather than the plain CGI one. The exact wiring depends on your Apache layout; we will add our working configuration here once it has been reviewed.</p>
+  <p>With Apache and <code>mod_fcgid</code>, this means the URL points at the FastCGI form of the program rather than the plain CGI one. This is the part we are least sure of, so treat the following as a sketch. First check that your MapServer build supports FastCGI at all: run <code>/usr/lib/cgi-bin/mapserv -v</code> and look for <code>FASTCGI</code> in the output. If it is missing, this route is closed and you will have to compare in some other way.</p>
+
+  <pre><code># /etc/apache2/conf-available/mapserver-fcgi.conf   (sketch, not run)
+&lt;Directory /usr/lib/cgi-bin&gt;
+  Options +ExecCGI
+  AddHandler fcgid-script .fcgi
+&lt;/Directory&gt;
+FcgidInitialEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf
+FcgidMaxProcessesPerClass 4</code></pre>
+
+  <pre><code>sudo ln -s /usr/lib/cgi-bin/mapserv /usr/lib/cgi-bin/mapserv.fcgi
+sudo a2enconf mapserver-fcgi
+sudo systemctl reload apache2</code></pre>
+
+  <p>Then use the same test URL as in 4.3, with <code>mapserv.fcgi</code> in place of <code>mapserv</code>. To compare fairly, run the benchmark once against each URL, with nothing else changed.</p>
 
   <div class="callout warn">
     <p><strong>Limit the number of FastCGI processes on a 1 GB board.</strong> By the <code>mod_fcgid</code> documentation, the defaults allow up to 100 processes per program and 1,000 in total. Under load, that many MapServer processes could use up all the memory. A low limit, for example <code>FcgidMaxProcessesPerClass 4</code> in the Apache configuration, is a safer starting point. We have not tested this on a Pi 3, so watch <code>free -h</code> while you try.</p>
   </div>
 
-  <h3>4.4 What is not yet answered</h3>
+  <h3>4.5 What is not yet answered</h3>
 
   <ul>
     <li>Memory use of the Apache + FastCGI + MapServer combination on 1 GB.</li>
@@ -588,10 +677,64 @@ FcgidInitialEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
 
   <p>The point of a benchmark is to let you compare two servers, or two settings, fairly. Use the same data, the same request, and the same procedure every time.</p>
 
-  <h3>5.1 The recipe</h3>
+  <h3>5.1 Make test data, and publish it in GeoServer</h3>
+
+  <div class="callout note">
+    <p><strong>What is verified here, and what is not.</strong> The data script and the conversion command below are ones we ran and checked (they produce 5,000 points in a Shapefile). The GeoServer menu steps are written from GeoServer's own documentation, not from our records, and the labels may differ a little between versions. Tell us where they differ.</p>
+  </div>
+
+  <p>Both servers need the <em>same</em> points. First install the GDAL tools, which include the conversion program <code>ogr2ogr</code>:</p>
+
+  <pre><code>sudo apt install -y gdal-bin</code></pre>
+
+  <p>Save this as <code>make_points.py</code>. It writes 5,000 random points (longitude and latitude between -10 and 10) and always gives the same points, so two people get identical data:</p>
+
+  <pre><code>#!/usr/bin/env python3
+"""Write 5,000 random points (lon/lat between -10 and 10) as GeoJSON."""
+import json, random
+
+random.seed(1)                      # same data every time
+kinds = ["A", "B", "C", "D"]
+features = []
+for i in range(5000):
+    lon = random.uniform(-10, 10)
+    lat = random.uniform(-10, 10)
+    features.append({
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [round(lon, 5), round(lat, 5)]},
+        "properties": {"id": i, "kind": random.choice(kinds), "name": f"point-{i}"},
+    })
+
+with open("points.geojson", "w") as f:
+    json.dump({"type": "FeatureCollection", "features": features}, f)
+print("wrote points.geojson with", len(features), "points")</code></pre>
+
+  <p>Turn it into a Shapefile (the format we used for both servers), and put a copy where each server will read it:</p>
+
+  <pre><code>python3 make_points.py
+ogr2ogr -f "ESRI Shapefile" points.shp points.geojson
+
+sudo mkdir -p /opt/geoserver/data_dir/data /srv/data
+sudo cp points.shp points.shx points.dbf points.prj /opt/geoserver/data_dir/data/
+sudo cp points.shp points.shx points.dbf points.prj /srv/data/</code></pre>
+
+  <p>Now publish it in GeoServer (reach the admin page through the tunnel from section 3.3):</p>
 
   <ol>
-    <li><strong>Same data on both servers.</strong> We generated 5,000 random points as a Shapefile and registered the identical dataset in GeoServer and in MapServer. (A step-by-step walkthrough for creating the data and registering the layer is not written yet. Use any point layer you have, as long as both servers serve the same one.)</li>
+    <li>Log in to the admin page.</li>
+    <li><em>Data &rarr; Workspaces &rarr; Add new workspace.</em> Name: <code>demo</code>. Namespace URI: <code>http://example.org/demo</code> (any address works; it is only a label). Submit.</li>
+    <li><em>Data &rarr; Stores &rarr; Add new Store &rarr; Shapefile.</em> Workspace: <code>demo</code>. Data Source Name: <code>points</code>. Shapefile location: <code>file:data/points.shp</code> (a path relative to GeoServer's data directory). Save.</li>
+    <li>On the page that follows, click <em>Publish</em> next to <code>points</code>.</li>
+    <li>On the <em>Data</em> tab, click <em>Compute from data</em> (native bounding box), then <em>Compute from native bounds</em> (lat/lon bounding box). If the coordinate system field is empty or says "unknown", type <code>EPSG:4326</code>. Save.</li>
+    <li><em>Data &rarr; Layer Preview.</em> Click <em>OpenLayers</em> next to <code>demo:points</code>. You should see a map with red-ish dots or the default point symbols.</li>
+  </ol>
+
+  <p>From now on, the layer name in requests is <code>demo:points</code>. MapServer gets the same data in section 4.3.</p>
+
+  <h3>5.2 The recipe</h3>
+
+  <ol>
+    <li><strong>Same data on both servers.</strong> We generated 5,000 random points as a Shapefile and registered the identical dataset in GeoServer and in MapServer (see 5.1 and 4.3). If you use your own data instead, make sure both servers serve the same layer.</li>
     <li><strong>One request type.</strong> A WMS <code>GetMap</code> request, identical every time (same bounding box, size, and format).</li>
     <li><strong>Warm up first.</strong> Send one or two requests and wait for them. The first request after starting a server is not representative (see the cold-start stall in section 3.4).</li>
     <li><strong>Four parallel workers, 20 requests each</strong>, 80 in total.</li>
@@ -602,7 +745,7 @@ FcgidInitialEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
 
   <p>Why wall-clock time? Adding up each request's own duration overstates the total when requests overlap. Dividing the number of requests by the real elapsed time gives what a user would actually experience.</p>
 
-  <h3>5.2 A small script</h3>
+  <h3>5.3 A small script</h3>
 
   <p>This needs only Python 3, which Ubuntu already includes. Save it as <code>bench.py</code>, and fill in your own URL. It counts a request as an error unless a real image comes back. This matters, because a map server often reports a problem as a text message with an ordinary "200 OK" status, and that would otherwise look like a very fast success.</p>
 
@@ -648,13 +791,13 @@ total = WORKERS * PER_WORKER
 print(f"requests={total} errors={errors} wall_s={wall:.2f} "
       f"throughput={total / wall:.1f} req/s")</code></pre>
 
-  <p>Example call (adjust host, layer, and bounding box). The <code>&amp;</code> characters need the quotes:</p>
+  <p>Example call for the layer made in 5.1 (adjust host, layer, and bounding box if you use your own data). The <code>&amp;</code> characters need the quotes:</p>
 
-  <pre><code>python3 bench.py "http://localhost:8080/geoserver/wms?service=WMS&amp;version=1.1.1&amp;request=GetMap&amp;layers=yourworkspace:yourlayer&amp;styles=&amp;bbox=-180,-90,180,90&amp;width=768&amp;height=768&amp;srs=EPSG:4326&amp;format=image/png"</code></pre>
+  <pre><code>python3 bench.py "http://localhost:8080/geoserver/wms?service=WMS&amp;version=1.1.1&amp;request=GetMap&amp;layers=demo:points&amp;styles=&amp;bbox=-10,-10,10,10&amp;width=768&amp;height=768&amp;srs=EPSG:4326&amp;format=image/png"</code></pre>
 
-  <p>For MapServer, use its own URL with <code>map=...&amp;service=WMS&amp;request=GetMap...</code>. If <code>errors</code> is not 0, do not trust the throughput figure until you know why.</p>
+  <p>For MapServer, use the test URL from section 4.3. If <code>errors</code> is not 0, do not trust the throughput figure until you know why.</p>
 
-  <h3>5.3 Run it from the right place</h3>
+  <h3>5.4 Run it from the right place</h3>
 
   <ul>
     <li>Run the script <strong>on the Pi itself</strong> when you want the server's speed, without the network in the way. Note that the script then competes with the server for the same four cores.</li>
@@ -662,7 +805,7 @@ print(f"requests={total} errors={errors} wall_s={wall:.2f} "
     <li>If you use an SSH tunnel for a long run, remember that a laptop that goes to sleep will kill the tunnel. In our 30-hour run, this was the only failure.</li>
   </ul>
 
-  <h3>5.4 Record the machine state alongside the numbers</h3>
+  <h3>5.5 Record the machine state alongside the numbers</h3>
 
   <pre><code>free -h
 cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
@@ -692,7 +835,7 @@ uptime</code></pre>
 
   <h3>Choosing and deploying</h3>
   <ul>
-    <li><strong>CGI versus FastCGI can reverse the result.</strong> MapServer under CGI lost to GeoServer; under FastCGI it won. Do not judge MapServer until it is running under FastCGI (see 4.3).</li>
+    <li><strong>CGI versus FastCGI can reverse the result.</strong> MapServer under CGI lost to GeoServer; under FastCGI it won. Do not judge MapServer until it is running under FastCGI (see 4.4).</li>
     <li><strong>Tomcat and GeoServer must be from the same servlet generation.</strong> If you deploy GeoServer as a <code>.war</code> in Tomcat, it has to match. The GeoServer 2.28.4 we tried is a <code>javax.servlet</code> build and needs Tomcat 9. It did not start on Tomcat 11, which is a <code>jakarta.servlet</code> release; the symptom was a <code>NoClassDefFoundError</code>. The reference setup our colleague began from was written for Tomcat 11, and newer GeoServer lines are expected to need the jakarta generation, so check the release notes of the version you download before you pick a Tomcat image. The bundled-Jetty binary in section 3 avoids the question.</li>
     <li><strong>Docker is not automatically the easy path on ARM.</strong> No official GeoServer arm64 image at the time of writing; the workable route is an official Tomcat image plus the <code>.war</code> (see 3.1).</li>
   </ul>
@@ -712,7 +855,7 @@ uptime</code></pre>
     <li><strong>Asking for the whole dataset at once is the expensive operation.</strong> Filter, or request a small area (see 3.7).</li>
     <li><strong>GeoJSON is much cheaper than GML</strong> for large results (see 3.6).</li>
     <li><strong>The CPU governor matters</strong>, and it resets on reboot (see 3.6).</li>
-    <li><strong>Too many FastCGI processes can exhaust 1 GB.</strong> Set a low limit (see 4.3).</li>
+    <li><strong>Too many FastCGI processes can exhaust 1 GB.</strong> Set a low limit (see 4.4).</li>
   </ul>
 
   <h3>Data and concurrency</h3>
@@ -724,7 +867,7 @@ uptime</code></pre>
   <h3>Measuring</h3>
   <ul>
     <li><strong>Do not compare numbers from different hardware or different data</strong> and call it a verdict. Our Pi 4B figures and our colleague's container figures used different data and different setups. Compare only what you ran under the same conditions.</li>
-    <li><strong>A benchmark can look fast because every request failed.</strong> Map servers often report errors as text with a "200 OK" status. The script in 5.2 counts only real images as successes.</li>
+    <li><strong>A benchmark can look fast because every request failed.</strong> Map servers often report errors as text with a "200 OK" status. The script in 5.3 counts only real images as successes.</li>
     <li><strong>Check a suspicious result in two ways before believing it.</strong> One of us briefly concluded that container memory limits were switched off, because we had looked in the wrong place for the setting (the older cgroup version instead of the current one). The limit was working all along.</li>
     <li><strong>The 1 GB experiment on a 4 GB board did not settle the question.</strong> Limiting a container to 1 GB on the Pi 4B did not squeeze GeoServer, because it never used more than about 600 MB with that small dataset. A real Pi 3, with larger data and more load, is the test that counts.</li>
     <li><strong>A long test from a sleeping laptop will be interrupted.</strong> Run long tests from a machine that stays awake.</li>
