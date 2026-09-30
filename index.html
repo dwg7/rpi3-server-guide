@@ -164,14 +164,16 @@
     <thead><tr><th></th><th>GeoServer</th><th>MapServer</th></tr></thead>
     <tbody>
       <tr><th>Written in</th><td>Java (needs a JVM)</td><td>C</td></tr>
-      <tr><th>Memory appetite</th><td>Large: hundreds of MB even when idle</td><td>Small: tens of MB</td></tr>
-      <tr><th>Strengths</th><td>WFS-T (editing over the web), WMTS, per-layer permissions, REST config API, web admin GUI</td><td>Fast, light WMS/WFS; configured through text files (mapfiles)</td></tr>
+      <tr><th>Memory appetite</th><td>Large: hundreds of MB even when idle</td><td>Small (reported to run in tens of MB; not measured by us)</td></tr>
+      <tr><th>Strengths</th><td>WFS-T (editing over the web), WMTS, per-layer permissions (and GeoFence for finer rules), REST config API, web admin GUI</td><td>Fast, light WMS/WFS; configured through text files (mapfiles)</td></tr>
       <tr><th>Question for a Pi 3</th><td>Does it fit in 1 GB at all?</td><td>Does its light footprint pay off?</td></tr>
     </tbody>
   </table>
   </div>
 
   <p>Which one you need depends on what you want to do. If you only need to <em>serve</em> maps, MapServer is likely enough. If you need to <em>edit</em> features through the web (WFS-T), or manage permissions per layer, GeoServer offers those features and MapServer does not.</p>
+
+  <p>Before either, it is worth asking what you actually need. If the goal is only to publish maps, there are even lighter approaches (for example pre-built vector tiles served as static files, or small tile servers). GeoServer and MapServer earn their weight when you want standard OGC services such as WMS and WFS, and, with GeoServer, editing.</p>
 
   <h3>What you need</h3>
   <ul>
@@ -334,6 +336,7 @@ sudo chown -R "$USER:$USER" /opt/geoserver/data_dir</code></pre>
 
   <div class="callout note">
     <p><strong>Why not Docker?</strong> At the time of writing we found no official GeoServer image for arm64 (the 64-bit ARM architecture of the Pi 3 and 4), and third-party images that claim arm64 support were reported to fail on real hardware. Running the binary directly also saves memory, which matters on 1 GB.</p>
+    <p>Docker is still possible: our colleague ran GeoServer 2.28.4 in an official multi-arch <strong>Tomcat 9</strong> image with GeoServer's <code>.war</code> file. We chose the bundled-Jetty binary for the memory reason above, not because Docker cannot work.</p>
   </div>
 
   <h3>3.2 Run it as a service, with a memory limit</h3>
@@ -396,6 +399,7 @@ journalctl -u geoserver.service -f</code></pre>
   <p>Things we have <strong>not</strong> measured, and that are worth your attention:</p>
   <ul>
     <li><strong>Total memory.</strong> The JVM's real memory use is larger than <code>-Xmx</code>. On the 4 GB board with a 2 GB heap cap, the process sat near 1 GB. Whether a 512 MB heap plus the operating system fits comfortably in 1 GB is the central question. Watch <code>free -h</code> and <code>systemctl show geoserver.service -p MemoryCurrent</code>.</li>
+    <li><strong>A hint from a 1 GB limit on a bigger board.</strong> Our colleague ran GeoServer in a container capped at 1 GB on the Pi 4B. It used about 450 MB when idle and 450 to 570 MB under a four-worker load, and was never killed for running out of memory. The data was small (5,000 points), so this shows that GeoServer <em>can</em> start within 1 GB, not that it copes with heavy use.</li>
     <li><strong>Swap.</strong> Our Pi 4B ran with no swap. On a 1 GB board you may want some, but swap on an SD card is slow and wears the card.</li>
     <li><strong>PostGIS.</strong> It runs as a second service next to GeoServer and takes memory too. You may prefer to start with a read-only layer (see 3.5) before adding it.</li>
   </ul>
@@ -435,7 +439,7 @@ done</code></pre>
   <ul>
     <li><strong>WFS-T edits</strong> on PostGIS: zero failures in sequential and concurrent tests, including 1,200 insert-and-delete cycles over two hours.</li>
     <li><strong>Long run:</strong> a mixed read/write soak test of about 30 hours produced no server-side errors. Memory grew by about 130 MB, mostly early on, then levelled off. (Three read iterations failed, traced to the tester's own SSH tunnel dying, not to the Pi.)</li>
-    <li><strong>The one workload that genuinely maxes it out:</strong> a single request for the <em>entire unfiltered</em> dataset. Throughput stayed near 0.7 requests per second no matter how many clients asked, because the work is limited by a single CPU core. Filtered requests, by contrast, ran at 25 to 33 per second. If a client only needs a small area or a few attributes, ask for exactly that.</li>
+    <li><strong>The one workload that genuinely maxes it out:</strong> a single request for the <em>entire unfiltered</em> dataset. Throughput stayed near 0.7 requests per second no matter how many clients asked, because the work is limited by a single CPU core. Filtered requests, by contrast, ran at roughly 25 to 31 per second once several clients were asking (about 12 per second for a single client). If a client only needs a small area or a few attributes, ask for exactly that.</li>
   </ul>
 
   <div class="callout note">
@@ -458,7 +462,7 @@ done</code></pre>
 <section id="mapserver">
   <h2>4. MapServer setup</h2>
 
-  <p>A colleague set up MapServer on the same Pi 4B, in a container based on Debian trixie-slim, with Apache 2, <code>mod_fcgid</code>, and the distribution's own MapServer packages (version 8.4.0). No source build was needed. On a Pi 3 you can install the same packages directly on Ubuntu Server; the package names are the same or very close.</p>
+  <p>A colleague set up MapServer on a Pi 4B (4 GB) of the same kind, in a container based on Debian trixie-slim, with Apache 2, <code>mod_fcgid</code>, and the distribution's own MapServer packages (version 8.4.0). No source build was needed. On a Pi 3 you can try the same packages directly on Ubuntu Server. We expect the package names to be the same or very close, but the version will probably differ from 8.4.0, so check yours with <code>mapserv -v</code>.</p>
 
   <h3>4.1 Install</h3>
 
@@ -631,7 +635,7 @@ uptime</code></pre>
   <ul>
     <li><strong>CGI versus FastCGI can reverse the result.</strong> MapServer under CGI lost to GeoServer; under FastCGI it won. Do not judge MapServer until it is running under FastCGI (see 4.3).</li>
     <li><strong>Tomcat and GeoServer must be from the same servlet generation.</strong> If you deploy GeoServer as a <code>.war</code> in Tomcat, a GeoServer built for <code>javax.servlet</code> (Tomcat 9) will not start on Tomcat 11 (<code>jakarta.servlet</code>). The symptom is a <code>NoClassDefFoundError</code>. Check which servlet generation your GeoServer version needs before you pick a Tomcat image. The bundled-Jetty binary in section 3 avoids the question.</li>
-    <li><strong>Docker is not automatically the easy path on ARM.</strong> No official GeoServer arm64 image at the time of writing (see 3.1).</li>
+    <li><strong>Docker is not automatically the easy path on ARM.</strong> No official GeoServer arm64 image at the time of writing; the workable route is an official Tomcat image plus the <code>.war</code> (see 3.1).</li>
   </ul>
 
   <h3>Configuration traps</h3>
