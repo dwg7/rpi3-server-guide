@@ -139,9 +139,10 @@ dwg7/rpi3-server-guide/
 - [x] リポジトリ名決定(`dwg7/rpi3-server-guide`)
 - [x] フォーマット方針決定(新規リポジトリ・単一ページ・
       フレームワークなし・GitHub Pages)
-- [ ] `dwg7/rpi3-server-guide` リポジトリ作成
-- [ ] `index.html`(単一ページガイド)の作成
-- [ ] GitHub Pages設定・公開
+- [x] `dwg7/rpi3-server-guide` リポジトリ作成(public、description・topics設定済み)
+- [x] `index.html`(単一ページガイド)の作成(初稿。全7セクション。2026-09-30)
+- [x] GitHub Pages設定・公開(mainブランチのルートから。ADR 0003)
+      → https://dwg7.unopengis.org/rpi3-server-guide/ (2026-09-30公開、repoのWebsiteに設定済み)
 - [ ] 協力者の記入欄の具体的な運用(メール経由での反映)を実際に
       一度試して、運用として無理がないか確認
 - [ ] PDF版の書き出し
