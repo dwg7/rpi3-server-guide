@@ -1,0 +1,48 @@
+apt rc=0
+openjdk version "17.0.20.1" 2026-08-18
+PRETTY_NAME="Ubuntu 24.04.5 LTS"
+cgroup memory limit: 1024 MB
+
+=== 3.1 page's own commands (download, unpack, chown) ===
+real	1m27.818s
+126971831 bytes
+--- the check the page gives:
+/opt/geoserver/start.jar
+--- archive top level (is there a version-numbered folder?)
+    560 data_dir
+    307 webapps
+     27 modules
+     23 lib
+     23 etc
+     12 licenses
+      5 bin
+      2 resources
+
+=== 3.2 start with the page's java arguments, then the page's checks ===
+first answer after 8s: HTTP 302
+HTTP/1.1 302 Found
+[::ffff:127.0.0.1]:8080
+java resident memory after start: 428 MB
+
+=== 5.1 data (page's commands) and layer (REST equivalent of the menu steps) ===
+wrote points.geojson with 5000 points
+Feature Count: 5000
+workspace 201; namespace 200; store 201; publish 201
+SRS found by GeoServer: EPSG:4326 | bbox -9.99829 9.99469
+
+=== 5.3 the page's own GetMap call, then bench.py (x3) ===
+200 image/png 139142 bytes
+gs.png: PNG image data, 768 x 768, 8-bit/color RGB, non-interlaced
+--- cold start (page 3.4): 1st GML / 2nd GML / GeoJSON request
+1.128938s  0.052034s  0.031053s  
+requests=80 errors=0 wall_s=1.13 throughput=70.5 req/s
+latency_ms p50=48 p95=163 max=174 avg_bytes=139142
+requests=80 errors=0 wall_s=0.67 throughput=118.7 req/s
+latency_ms p50=32 p95=48 max=55 avg_bytes=139142
+requests=80 errors=0 wall_s=0.96 throughput=83.3 req/s
+latency_ms p50=24 p95=54 max=250 avg_bytes=139142
+java resident memory after load: 518 MB
+out-of-memory kills: oom_kill 0
+ERROR lines in geoserver.log: 0
+
+=== DONE ===
