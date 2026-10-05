@@ -1,0 +1,16 @@
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+apache2 2.4.68-1~deb13u1
+cgi-mapserver 8.4.0-4+deb13u2
+libapache2-mod-fcgid 1:2.3.9-4+b1
+config file at /srv/custom.conf (not the default place). Does the request reach MapServer's config?
+S0 nothing set (control)                                       CGI: FAILS  FastCGI: FAILS
+S1 SetEnv (the guide's plain-CGI line)                         CGI: works  FastCGI: FAILS
+S2 FcgidInitialEnv (the guide's FastCGI line)                  CGI: FAILS  FastCGI: works
+S3 apache2ctl start (as Ubuntu's service does) + env in envvars + PassEnv CGI: works  FastCGI: FAILS
+S4 apache2ctl start + env in envvars only                      CGI: FAILS  FastCGI: FAILS
+--- control: the configuration file at the DEFAULT place /etc/mapserver.conf, nothing else set
+S7 file at /etc/mapserver.conf, nothing else set               CGI: works  FastCGI: works
+--- Apache started directly, keeping the container's environment (like a container's foreground start):
+S5 variable in Apache's own environment + PassEnv              CGI: works  FastCGI: FAILS
+S6 variable in Apache's own environment only                   CGI: FAILS  FastCGI: FAILS
+=== DONE ===

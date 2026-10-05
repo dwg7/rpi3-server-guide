@@ -64,6 +64,10 @@ publicになった段階で、相互にリンクすればよい。
   受け手(協力者、cc共同検証者)向けの数セクションの文書には過剰装備。
   kaga0・zukaku・kikimimiで一貫してきた「静的ファイルだけで完結する」
   という設計判断を踏襲する
+- **ChangeLog**: ページ内の `#changes` セクション(日付の新しい順)を一次情報とする。
+  内容を変えたら、同じコミットで (1) ChangeLogに追記、(2) フッターの「Version: 日付」を更新する。
+  PDFを送った相手が、手元の版との差分を日付で確認できるようにするため(Added / Changed / Fixed
+  の別を明記し、コミットへのリンクを付ける)。ファイル別の `CHANGELOG.md` は作らない(二重管理を避ける)
 - **GitHub Pagesでの公開**: ビルドなしの素のHTML、または最小限の
   front matterのみのJekyllで配信する
 - **後日、同じ内容をPDFとしても書き出し、協力者にメール送付する**
@@ -143,6 +147,11 @@ dwg7/rpi3-server-guide/
 - [x] `index.html`(単一ページガイド)の作成(初稿。全7セクション。2026-09-30)
 - [x] GitHub Pages設定・公開(mainブランチのルートから。ADR 0003)
       → https://dwg7.unopengis.org/rpi3-server-guide/ (2026-09-30公開、repoのWebsiteに設定済み)
+- [x] ChangeLog(ページ内 `#changes`)の導入、共同検証者のレビュー(UNopenGIS/7#1003 の
+      コメント 2026-10-05)の反映。`MAPSERVER_CONFIG_FILE` の渡し方をコンテナで検証
+      (`verification/run-env-check.sh`)。**注意**: 共同検証者の「FastCGIはApacheの環境を
+      継承する」という説明は、Ubuntu 24.04・Debian trixie(8.4.0)のコンテナでは再現せず、
+      既定の場所 `/etc/mapserver.conf` にあるから動く、という説明が整合する
 - [ ] 協力者の記入欄の具体的な運用(メール経由での反映)を実際に
       一度試して、運用として無理がないか確認
 - [ ] PDF版の書き出し

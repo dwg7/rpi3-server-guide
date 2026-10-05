@@ -147,6 +147,7 @@
     <li><a href="#benchmark">5. Benchmark</a></li>
     <li><a href="#pitfalls">6. Pitfalls</a></li>
     <li><a href="#yours">7. Your findings</a></li>
+    <li><a href="#changes">Change log</a></li>
   </ol>
 </nav>
 
@@ -173,7 +174,7 @@
 
   <h3>What has been checked, and where</h3>
 
-  <p>Three kinds of evidence appear in this guide. <span class="checked">Checked in a container</span> means we ran the step on 2026-10-01 in an Ubuntu 24.04 arm64 container (on a desktop-class computer, with GeoServer limited to 1 GB of memory). That shows a step is <em>correct</em>; it says nothing about speed or memory on a real Pi. <strong>Pi 4B</strong> means the author ran it on that board. <span class="untested">Not yet tested on a Pi 3</span> is still the state of everything on a real Pi 3. Nothing has yet been reproduced by a second person.</p>
+  <p>Three kinds of evidence appear in this guide. <span class="checked">Checked in a container</span> means we ran the step on 2026-10-01 in an Ubuntu 24.04 arm64 container (on a desktop-class computer, with GeoServer limited to 1 GB of memory). That shows a step is <em>correct</em>; it says nothing about speed or memory on a real Pi. <strong>Pi 4B</strong> means the author ran it on that board. <span class="untested">Not yet tested on a Pi 3</span> is still the state of everything on a real Pi 3. Nothing has yet been reproduced by a second person. (On 2026-10-05 our colleague read section 4 and described their own working setup in the public discussion linked in the footer. That is a review, not a reproduction.)</p>
 
   <div class="table-wrap">
   <table>
@@ -185,7 +186,7 @@
       <tr><td>3.2 systemd service</td><td>Run</td><td>Same command run directly (no systemd in a container)</td><td>No</td><td>Verified on Pi 4B</td></tr>
       <tr><td>3.4 Small heap (256 MB / 512 MB)</td><td>Run</td><td>Started and served under a 1 GB limit, no out-of-memory kill</td><td>No</td><td>Partly verified</td></tr>
       <tr><td>5.1 Test data and layer</td><td>Similar data</td><td>Data script and conversion run; layer made through GeoServer's REST interface</td><td>No</td><td>Data verified; GUI menu steps untested</td></tr>
-      <tr><td>4.1&ndash;4.3 MapServer, plain CGI</td><td>Colleague (Debian trixie, 8.4.0)</td><td>Run, Ubuntu 24.04, 8.0.1</td><td>No</td><td>Checked in a container</td></tr>
+      <tr><td>4.1&ndash;4.3 MapServer, plain CGI</td><td>Colleague (Debian trixie, 8.4.0)</td><td>Run on Ubuntu 24.04 (8.0.1). The configuration-variable check was also run on Debian 13 (8.4.0)</td><td>No</td><td>Checked in a container</td></tr>
       <tr><td>4.4 MapServer, FastCGI</td><td>Colleague</td><td>Run</td><td>No</td><td>Checked in a container; speed depends on hardware</td></tr>
       <tr><td>5.3 Benchmark script</td><td>Similar procedure</td><td>Run against both servers</td><td>No</td><td>Checked in a container</td></tr>
       <tr><td>All performance and memory figures for a Pi 3</td><td>Not applicable</td><td>Not applicable</td><td>No</td><td>Hypothesis</td></tr>
@@ -616,7 +617,7 @@ apache2ctl configtest                             # expect: Syntax OK</code></pr
       </tbody>
     </table>
     </div>
-    <p>So, on Ubuntu, the simplest fix is to put the file at <code>/etc/mapserver.conf</code>. Only if you keep it elsewhere do you have to pass <code>MAPSERVER_CONFIG_FILE</code> to the MapServer process. Our colleague's container (Debian trixie, MapServer 8.4.0) needed the variable passed explicitly, so the default location may differ between builds. If you see the error, check these in order: does the file exist, can the web server's user read it, and does the variable (if you need it) reach the process.</p>
+    <p>So, on Ubuntu, the simplest fix is to put the file at <code>/etc/mapserver.conf</code>. Only if you keep it elsewhere do you have to pass <code>MAPSERVER_CONFIG_FILE</code> to the MapServer process. The same is true on Debian 13 (trixie) with MapServer 8.4.0, which we also checked. How to pass the variable is explained below. If you see the error, check these in order: does the file exist, can the web server's user read it, and does the variable (if you need it) reach the process.</p>
   </div>
 
   <p>This is the file we used. The pattern must match the folder and file names of your mapfiles:</p>
@@ -627,6 +628,24 @@ CONFIG
     MS_MAP_PATTERN "^/srv/mapfiles/[A-Za-z0-9_]+\.map$"
   END
 END</code></pre>
+
+  <p><strong>If the file is not at <code>/etc/mapserver.conf</code></strong>, MapServer needs <code>MAPSERVER_CONFIG_FILE</code>, and plain CGI and FastCGI receive it in different ways. <span class="checked">Checked in a container</span> We tried the settings below with the file at <code>/srv/custom.conf</code>. The results were the same on Ubuntu 24.04 (MapServer 8.0.1) and on Debian 13 trixie (MapServer 8.4.0):</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Setting</th><th>Plain CGI</th><th>FastCGI</th></tr></thead>
+    <tbody>
+      <tr><td>Nothing set</td><td>fails</td><td>fails</td></tr>
+      <tr><td><code>SetEnv MAPSERVER_CONFIG_FILE /srv/custom.conf</code></td><td>works</td><td>fails</td></tr>
+      <tr><td><code>FcgidInitialEnv MAPSERVER_CONFIG_FILE /srv/custom.conf</code></td><td>fails</td><td>works</td></tr>
+      <tr><td>The variable in Apache's own environment, plus <code>PassEnv MAPSERVER_CONFIG_FILE</code></td><td>works</td><td>fails</td></tr>
+      <tr><td>The variable in Apache's own environment only</td><td>fails</td><td>fails</td></tr>
+      <tr><td>The file at <code>/etc/mapserver.conf</code>, nothing else set</td><td>works</td><td>works</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>So the two lines used in this guide are right, and <strong>each covers only one mode</strong>: <code>SetEnv</code> for plain CGI (section 4.3), <code>FcgidInitialEnv</code> for FastCGI (section 4.4). If you keep the file elsewhere and want to compare both modes, you need both lines. In these tests, a variable that only exists in Apache's own environment did not reach the FastCGI workers. The simplest way to avoid all of this is to keep the file at <code>/etc/mapserver.conf</code>. Our colleague's working setup keeps the file there, and also sets a variable pointing to it; in our tests, the location alone is enough for both modes.</p>
 
   <h3>4.3 A first map, with plain CGI</h3>
 
@@ -687,7 +706,7 @@ END</code></pre>
 
   <p>Expect the start of an XML document (<code>&lt;WMS_Capabilities ...</code>) that names your layer (<code>&lt;Name&gt;points&lt;/Name&gt;</code> appears further down), not an error message. If you see <code>msLoadConfig()</code> here, the problem is the configuration file (4.2), and Apache is not involved yet.</p>
 
-  <p><strong>Step 2: let Apache run it as plain CGI.</strong> Create <code>/etc/apache2/conf-available/mapserver.conf</code> containing one line, then switch it on. (With the file at <code>/etc/mapserver.conf</code> the line is not strictly needed, but it is harmless, and it is required if you keep the file elsewhere.)</p>
+  <p><strong>Step 2: let Apache run it as plain CGI.</strong> Create <code>/etc/apache2/conf-available/mapserver.conf</code> containing one line, then switch it on. (With the file at <code>/etc/mapserver.conf</code> the line is not needed, but it is harmless. If you keep the file elsewhere, put that path here. This line covers plain CGI only; see the table in 4.2.)</p>
 
   <pre><code>SetEnv MAPSERVER_CONFIG_FILE /etc/mapserver.conf</code></pre>
 
@@ -745,7 +764,7 @@ sudo systemctl reload apache2</code></pre>
   <pre><code>ps -eo pid,rss,args | grep mapserv.fcgi | grep -v grep
 # rss is resident memory in KB. In our container each process was about 44,000 (44 MB)</code></pre>
 
-  <p>To compare fairly, run the benchmark once against each URL, with nothing else changed.</p>
+  <p>If your configuration file is not at <code>/etc/mapserver.conf</code>, remember that <code>FcgidInitialEnv</code> reaches FastCGI only, and the <code>SetEnv</code> line from 4.3 reaches plain CGI only (table in 4.2). To compare fairly, run the benchmark once against each URL, with nothing else changed.</p>
 
   <div class="callout warn">
     <p><strong>Limit the number of FastCGI processes on a 1 GB board.</strong> By the <code>mod_fcgid</code> documentation, the defaults allow up to 100 processes per program and 1,000 in total. At about 44 MB each, that could use up all the memory under load. The line <code>FcgidMaxProcessesPerClass 4</code> above is a safer start. In our container check, 3 processes were alive after the benchmark. We have not tested this on a Pi 3, so watch <code>free -h</code> while you try.</p>
@@ -974,7 +993,7 @@ time (until curl -sf -o /dev/null "THE-GETMAP-URL"; do sleep 1; done)</code></pr
   <h3>Configuration traps</h3>
   <ul>
     <li><strong>Getting the Pi onto the network in the first place</strong> has its own traps: both cable and Wi-Fi in <code>network-config</code>, <code>dhcp4: true</code> on Wi-Fi, and cloud-init running only once per card (see 2.2).</li>
-    <li><strong>MapServer 8 needs a configuration file, or it refuses every request.</strong> The error message (<code>msLoadConfig(): Unable to access file.</code>) means that no configuration file was found. On Ubuntu, put it at <code>/etc/mapserver.conf</code>; if it is elsewhere, <code>MAPSERVER_CONFIG_FILE</code> has to reach the process. A path that does not match <code>MS_MAP_PATTERN</code> gives a different message (see 4.2).</li>
+    <li><strong>MapServer 8 needs a configuration file, or it refuses every request.</strong> The error message (<code>msLoadConfig(): Unable to access file.</code>) means that no configuration file was found. Put it at <code>/etc/mapserver.conf</code>; if it is elsewhere, <code>MAPSERVER_CONFIG_FILE</code> has to reach the process (<code>SetEnv</code> for plain CGI, <code>FcgidInitialEnv</code> for FastCGI; each covers only one mode). A path that does not match <code>MS_MAP_PATTERN</code> gives a different message (see 4.2).</li>
     <li><strong>systemd quoting:</strong> quote <code>Environment="JAVA_OPTS=..."</code> and use <code>${VAR}</code> with braces inside <code>ExecStart</code> (see 3.2).</li>
     <li><strong>GeoServer's REST shortcut for registering a Shapefile</strong> (the <code>external.shp</code> form) returned an unexplained error for us. The longer, standard XML-POST way to create a datastore worked.</li>
     <li><strong>Change the default GeoServer admin password</strong> before doing anything else, and keep the admin interface off the open network (see 3.3).</li>
@@ -1056,11 +1075,46 @@ time (until curl -sf -o /dev/null "THE-GETMAP-URL"; do sleep 1; done)</code></pr
   <p class="blank"><em>None yet. This space will grow as your notes arrive.</em></p>
 </section>
 
+<!-- ============================ CHANGE LOG ============================ -->
+<section id="changes">
+  <h2>Change log</h2>
+
+  <p>What changed on this page, newest first. If you have an earlier copy (for example a PDF), compare its date with this list to see what is new. The footer of each version shows its date. Each date links to the commit, where the exact differences can be seen.</p>
+
+  <h3>2026-10-05 (this version)</h3>
+  <ul>
+    <li><strong>Changed:</strong> sections 4.2, 4.3 and 4.4 now explain how to hand <code>MAPSERVER_CONFIG_FILE</code> to MapServer when the configuration file is not at <code>/etc/mapserver.conf</code>, with a table of six cases. The lines already used in the guide are right, but each covers only one mode: <code>SetEnv</code> for plain CGI, <code>FcgidInitialEnv</code> for FastCGI. Tested on Ubuntu 24.04 (MapServer 8.0.1) and on Debian 13 trixie (8.4.0, the same version as our colleague's setup).</li>
+    <li><strong>Changed:</strong> the remark that the default location "may differ between builds" is removed. A file at <code>/etc/mapserver.conf</code> works for both modes on both systems.</li>
+    <li><strong>Changed:</strong> the verification table now notes that our colleague reviewed section 4 on 2026-10-05, in <a href="https://github.com/UNopenGIS/7/issues/1003#issuecomment-5987620899">the public discussion</a>. That comment also supplied the details of their working setup that led to this change.</li>
+    <li><strong>Added:</strong> this change log, and a version date in the footer.</li>
+    <li><strong>Added:</strong> <code>verification/run-env-check.sh</code> and its logs, in the repository.</li>
+  </ul>
+
+  <h3><a href="https://github.com/dwg7/rpi3-server-guide/commit/fd9c383">2026-10-01</a>: checked in a container</h3>
+  <ul>
+    <li><strong>Added:</strong> a table of what has been checked and where; reference versions and two ways to use the guide; "What this guide does not cover"; expected output after the major steps; a shortest path to one image; section 5.6 (record more than speed); local-client and remote-client tests (5.4); a note on what the benchmark compares.</li>
+    <li><strong>Changed:</strong> the benchmark script now also prints median, 95th-percentile and slowest response times and the image size. Section 4.2 was rewritten: <code>msLoadConfig(): Unable to access file.</code> means that no configuration file was found, and <code>/etc/mapserver.conf</code> is read by default on Ubuntu. Section 4.4 now says that the winner between CGI and FastCGI depends on the hardware (FastCGI was <em>not</em> faster in our container). Added a rough memory budget for 1 GB.</li>
+    <li><strong>Fixed:</strong> long inline code no longer runs off the screen on a phone.</li>
+    <li><strong>Note:</strong> the footer of this version still said "Last updated: 2026-09-30". That date was not updated by mistake. The content is that of 2026-10-01.</li>
+  </ul>
+
+  <h3>2026-09-30 (later the same day)</h3>
+  <ul>
+    <li><strong>Added:</strong> a walkthrough for test data and for publishing it in GeoServer (5.1), and a first MapServer map (4.3). At that time these were drafts that had not been run (<a href="https://github.com/dwg7/rpi3-server-guide/commit/a0b648f">a0b648f</a>).</li>
+    <li><strong>Fixed</strong> after a review (<a href="https://github.com/dwg7/rpi3-server-guide/commit/1c31a2e">1c31a2e</a>): the benchmark script counted error pages as successes; the cold-start delay was described wrongly (the 30 seconds was the test client's time limit); the Tomcat versions were stated more exactly; added notes on first boot, power, heat and the Pi 3's network.</li>
+  </ul>
+
+  <h3><a href="https://github.com/dwg7/rpi3-server-guide/commit/54cda66">2026-09-30</a>: first published version</h3>
+  <ul>
+    <li>Seven sections: introduction, preparing the Pi, GeoServer, MapServer, benchmark, pitfalls, and a space for your findings.</li>
+  </ul>
+</section>
+
 </main>
 
 <footer>
   <p>Sources: the public discussion in <a href="https://github.com/UNopenGIS/7/issues/1003">UNopenGIS/7 issue 1003</a>, and our own measurements on a Raspberry Pi 4B. Repository: <a href="https://github.com/dwg7/rpi3-server-guide">dwg7/rpi3-server-guide</a>. Public-domain dedication: CC0 1.0 (see the <code>LICENSE</code> file in the repository).</p>
-  <p>Last updated: 2026-09-30. Status: first published version. Corrections and additions are welcome.</p>
+  <p>Version: 2026-10-05 (see the <a href="#changes">change log</a>). Status: working draft. Corrections and additions are welcome.</p>
 </footer>
 
 </div>
